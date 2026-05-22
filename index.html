@@ -2075,6 +2075,12 @@ function renderAdmin(){
           <div class="adm-input-group"><span class="adm-input-label">💰 Narxi (UZS)</span><input class="adm-input" id="adm_price_${p.id}" type="number" value="${p.price}" style="font-size:14px;font-weight:900;color:var(--red)"/></div>
           <div class="adm-input-group"><span class="adm-input-label">📦 Dona/quti</span><input class="adm-input" id="adm_dona_${p.id}" type="number" value="${p.dona}"/></div>
         </div>
+        <div class="adm-input-group" style="margin-top:4px">
+          <span class="adm-input-label">📂 Kategoriya</span>
+          <select class="adm-input" id="adm_cat_${p.id}" style="cursor:pointer">
+            ${cats.filter(c=>c.id!=='all').map(c=>`<option value="${c.id}"${p.cat===c.id?' selected':''}>${c.uz}</option>`).join('')}
+          </select>
+        </div>
         <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px">
           <button class="adm-save-btn" onclick="saveProduct(${p.id})">💾 Saqlash</button>
           <button onclick="toggleProduct(${p.id})" title="${isInactive?'Faollashtirish':'Nofaol qilish'}"
@@ -2237,18 +2243,22 @@ function renderAdmin(){
       </div>
     </div>
     <div style="background:white;border:1.5px solid var(--border);border-radius:14px;padding:14px">
-      <div style="font-size:13px;font-weight:900;margin-bottom:8px">💡 Tayyor shablonlar</div>
-      ${[
-        {t:'🎉 Yangi mahsulot!', m:'🎉 Yangi mahsulot qo\'shildi!\n\n🍦 Nom: [mahsulot nomi]\n💰 Narx: [narx] UZS\n\nBuyurtma berish: @ConoIceCream_bot'},
-        {t:'⚠️ Ish vaqti o\'zgardi', m:'⚠️ Ish vaqti haqida ma\'lumot:\n\n🕐 [yangi vaqt]\n\nUzr so\'raymiz va tushunganingiz uchun rahmat! 🙏'},
-        {t:'🛵 Yetkazib berish', m:'🚀 Xurmatli mijozlar!\n\nBugungi buyurtmalar yetkazib berilmoqda. Operator tez orada bog\'lanadi.\n\nRahmat! ❤️ CONO'},
-        {t:'🎁 Aksiya!', m:'🎁 Maxsus taklif!\n\n[aksiya tavsifi]\n\nFaqat [sanagacha] amal qiladi!\n\nBuyurtma: @ConoIceCream_bot'},
-      ].map(s=>`
-      <button onclick="document.getElementById('broadcastMsg').value=${JSON.stringify(s.m)}"
-        style="width:100%;text-align:left;padding:10px 12px;background:#FFF5F7;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;font-family:'Nunito',sans-serif;font-size:12px;font-weight:700;color:var(--text)">
-        ${s.t}
-      </button>`).join('')}
-    </div>`;
+      <div style="font-size:13px;font-weight:900;margin-bottom:8px">💡 Tayyor shablonlar</div>`;
+
+  const shablonlar = [
+    {t:'🎉 Yangi mahsulot!',    m:"🎉 Yangi mahsulot qo'shildi!\n\n🍦 Nom: [mahsulot nomi]\n💰 Narx: [narx] UZS\n\nBuyurtma berish: @ConoIceCream_bot"},
+    {t:"⚠️ Ish vaqti o'zgardi", m:"⚠️ Ish vaqti haqida ma'lumot:\n\n🕐 [yangi vaqt]\n\nUzr so'raymiz va tushunganingiz uchun rahmat! 🙏"},
+    {t:'🛵 Yetkazib berish',     m:"🚀 Xurmatli mijozlar!\n\nBugungi buyurtmalar yetkazib berilmoqda. Operator tez orada bog'lanadi.\n\nRahmat! ❤️ CONO"},
+    {t:'🎁 Aksiya!',             m:"🎁 Maxsus taklif!\n\n[aksiya tavsifi]\n\nFaqat [sanagacha] amal qiladi!\n\nBuyurtma: @ConoIceCream_bot"},
+  ];
+  // Shablonlarni global o'zgaruvchiga saqlaymiz — onclick ichida xavfsiz ishlatish uchun
+  window._shablonlar = shablonlar;
+  shablonlar.forEach((s,i)=>{
+    html+=`<button onclick="window._setTemplate(${i})"
+      style="width:100%;text-align:left;padding:10px 12px;background:#FFF5F7;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;font-family:'Nunito',sans-serif;font-size:12px;font-weight:700;color:var(--text)">
+      ${s.t}</button>`;
+  });
+  html+=`</div>`;
   }
 
   document.getElementById('adminBody').innerHTML=html;
@@ -2329,6 +2339,15 @@ function savePayMethodsAdmin(){
   renderPayOpts();
   showToast('✅ To\'lov sozlamalari saqlandi!');
 }
+
+// Shablon tanlash yordamchisi
+window._setTemplate = function(i){
+  const el = document.getElementById('broadcastMsg');
+  if(el && window._shablonlar && window._shablonlar[i]){
+    el.value = window._shablonlar[i].m;
+    el.focus();
+  }
+};
 
 // ===== BROADCAST =====
 async function sendBroadcast(){
@@ -2437,10 +2456,12 @@ async function saveProduct(id){
   const ruVal=document.getElementById(`adm_ru_${id}`).value.trim();
   const priceVal=parseInt(document.getElementById(`adm_price_${id}`).value)||0;
   const donaVal=parseInt(document.getElementById(`adm_dona_${id}`).value)||1;
+  const catEl=document.getElementById(`adm_cat_${id}`);
   if(uzVal)p.uz=uzVal;
   if(ruVal)p.ru=ruVal;
   if(priceVal>0)p.price=priceVal;
   p.dona=donaVal;
+  if(catEl) p.cat=catEl.value;
   try {
     await fetch(`${BACKEND_URL}/products/${id}?secret=${ADMIN_SECRET}`, {
       method:'PUT',
