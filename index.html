@@ -1254,11 +1254,87 @@ let cart={},activeCat='all',search='',selPayment='click',penoplastOn=false;
 let locMode='gps',gpsCoords=null,selDistrict='';
 let orderN=Math.floor(Math.random()*900)+100;
 
+// ===== STATISTICS STATE =====
+let orderStats = JSON.parse(localStorage.getItem('cono_stats')||'{"total":0,"revenue":0,"today":0,"todayRev":0,"lastDate":""}');
+
+function recordOrder(total){
+  const today = new Date().toLocaleDateString('uz-UZ');
+  if(orderStats.lastDate !== today){ orderStats.today=0; orderStats.todayRev=0; orderStats.lastDate=today; }
+  orderStats.total++;
+  orderStats.revenue += total;
+  orderStats.today++;
+  orderStats.todayRev += total;
+  localStorage.setItem('cono_stats', JSON.stringify(orderStats));
+}
+
+// ===== PAYMENT METHODS CONFIG =====
+const DEFAULT_PAY_METHODS = {
+  click:  {enabled:true,  icon:'💳', label:'Click'},
+  payme:  {enabled:true,  icon:'📲', label:'Payme'},
+  uzum:   {enabled:true,  icon:'🟣', label:'Uzum Bank'},
+  bank:   {enabled:true,  icon:'🏦', label:"Bank o'tkazma"},
+  stars:  {enabled:false, icon:'⭐', label:'Telegram Stars'},
+  cash:   {enabled:true,  icon:'💵', label:"Naqd pul"},
+};
+let payMethods = JSON.parse(localStorage.getItem('cono_pay_methods')||'null') || JSON.parse(JSON.stringify(DEFAULT_PAY_METHODS));
+
+function savePayMethods(){ localStorage.setItem('cono_pay_methods', JSON.stringify(payMethods)); }
+
+function renderPayOpts(){
+  const container = document.querySelector('.pay-opts');
+  if(!container) return;
+  container.innerHTML = '';
+  let first = null;
+  Object.entries(payMethods).forEach(([key,m])=>{
+    if(!m.enabled) return;
+    if(!first) first = key;
+    const isSpan = key==='stars' || key==='cash';
+    const div = document.createElement('div');
+    div.className = 'pay-opt' + (selPayment===key?' sel':'');
+    div.dataset.val = key;
+    div.setAttribute('onclick','selPay(this)');
+    if(isSpan) div.style.gridColumn='span 2';
+    div.innerHTML = `<span class="pay-opt-icon">${m.icon}</span><div class="pay-opt-lbl">${m.label}</div>`;
+    container.appendChild(div);
+  });
+  // If currently selected method is now disabled, pick first enabled
+  if(payMethods[selPayment] && !payMethods[selPayment].enabled){
+    selPayment = first || 'cash';
+    document.querySelectorAll('.pay-opt').forEach(e=>e.classList.remove('sel'));
+    const firstEl = container.querySelector(`[data-val="${selPayment}"]`);
+    if(firstEl) firstEl.classList.add('sel');
+  }
+  document.querySelectorAll('.pay-detail').forEach(d=>d.classList.remove('show'));
+  const det = document.getElementById('detail-'+selPayment);
+  if(det) det.classList.add('show');
+  updateCheckUploadVisibility();
+}
+
 // ===== INIT =====
 const isOpen=()=>{const h=new Date().getHours();return h>=WORK_START&&h<WORK_END};
 
 // ===== ADMIN ID =====
 const ADMIN_IDS = [7677968669]; // Faqat shu Telegram ID lar admin ko'ra oladi
+
+// ===== LOAD SAVED IMAGES FROM LOCALSTORAGE =====
+function loadSavedImgs(){
+  try{
+    const saved=JSON.parse(localStorage.getItem('cono_pImgs')||'{}');
+    Object.keys(saved).forEach(k=>{ pImgs[parseInt(k)]=saved[k]; });
+  }catch(e){ console.warn('Rasm yuklashda xato:',e); }
+}
+
+// ===== LOAD SAVED CATEGORIES FROM LOCALSTORAGE =====
+function loadSavedCats(){
+  try{
+    const saved = JSON.parse(localStorage.getItem('cono_cats')||'null');
+    if(saved && Array.isArray(saved) && saved.length>0){
+      cats.length=0;
+      saved.forEach(c=>cats.push(c));
+    }
+  }catch(e){ console.warn('Kategoriya yuklashda xato:',e); }
+}
+function saveCats(){ localStorage.setItem('cono_cats', JSON.stringify(cats)); }
 
 // ===== LOAD PRODUCTS FROM BACKEND =====
 async function loadProducts(){
@@ -1294,8 +1370,10 @@ async function init(){
   }
   checkHours();
   applyLang();
+  loadSavedImgs(); // localStorage dan rasmlarni yuklaymiz
   // Avval backenddan mahsulotlarni yuklaymiz, keyin render qilamiz
   await loadProducts();
+  loadSavedCats(); // localStorage dan kategoriyalarni yuklaymiz
   renderCats();
   renderProds();
 }
@@ -1467,7 +1545,7 @@ function copyCard(num, btn){
 }
 
 // CART MODAL
-function openCart(){document.getElementById('cartModal').classList.add('open');applyLang();renderCart();onCartOpen();}
+function openCart(){document.getElementById('cartModal').classList.add('open');applyLang();renderCart();renderPayOpts();onCartOpen();}
 function closeCart(){document.getElementById('cartModal').classList.remove('open');}
 function closeOnOverlay(e){if(e.target===document.getElementById('cartModal'))closeCart();}
 
@@ -1763,7 +1841,7 @@ async function sendOrder(){
         }catch(e){console.error('Chek yuborishda xato:',e);}
       }
       try{if(window.Telegram && window.Telegram.WebApp)window.Telegram.WebApp.sendData(JSON.stringify({orderId,name,phone,address,total:grandTot,payment:selPayment}));}catch(e){}
-      showSuccess(orderId);
+      showSuccess(orderId,grandTot);
     }else{
       showToast('❌ '+(data.description||'Xatolik'));
       btn.classList.remove('loading');
@@ -1776,10 +1854,11 @@ async function sendOrder(){
   }
 }
 
-function showSuccess(id){
+function showSuccess(id,grandTot){
   closeCart();cart={};updateCartUI();renderProds();
   // Chekni tozalash
   removeCheck();
+  recordOrder(grandTot||0);
   const orderId='#'+id;
   document.getElementById('successId').textContent=orderId;
   document.getElementById('checkOrderId').textContent=orderId;
@@ -1903,231 +1982,370 @@ function closeAdmin(){
   document.getElementById('adminPanel').classList.remove('open');
 }
 
+// ===== ADMIN TAB STATE =====
+let adminTab = 'products'; // 'products' | 'cats' | 'payment' | 'stats' | 'broadcast'
+
+function switchAdminTab(tab){
+  adminTab=tab;
+  renderAdmin();
+}
+
 function renderAdmin(){
-  // ===== YANGI MAHSULOT QO'SHISH FORMASI =====
   const catOptions = cats.filter(c=>c.id!=='all').map(c=>
     `<option value="${c.id}">${c.uz}</option>`
   ).join('');
 
-  let html=`
-  <!-- STAT -->
-  <div style="font-size:12px;color:#888;margin-bottom:14px;background:#FFF0F2;padding:10px 12px;border-radius:10px;font-weight:600;display:flex;align-items:center;gap:8px">
-    🔐 <span>Admin panel — <b style="color:var(--red)">${prods.length} ta mahsulot</b></span>
-  </div>
+  // ===== TAB BAR =====
+  const tabs=[
+    {id:'products', icon:'🛍️', lbl:'Mahsulotlar'},
+    {id:'cats',     icon:'📂', lbl:'Kategoriyalar'},
+    {id:'payment',  icon:'💳', lbl:"To'lov"},
+    {id:'stats',    icon:'📊', lbl:'Statistika'},
+    {id:'broadcast',icon:'📢', lbl:'Xabar'},
+  ];
+  let html = `<div style="display:flex;gap:6px;overflow-x:auto;padding:4px 0 12px;scrollbar-width:none">`;
+  tabs.forEach(t=>{
+    const active = adminTab===t.id;
+    html+=`<button onclick="switchAdminTab('${t.id}')"
+      style="flex-shrink:0;padding:8px 13px;border:2px solid ${active?'var(--red)':'var(--border)'};
+      background:${active?'var(--red)':'white'};color:${active?'white':'#555'};border-radius:20px;
+      font-family:'Nunito',sans-serif;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap">
+      ${t.icon} ${t.lbl}</button>`;
+  });
+  html+=`</div>`;
 
-  <!-- TO'LOV SOZLAMALARI -->
-  <div style="background:linear-gradient(135deg,#E3F2FD,#EDE7F6);border:2px solid #BBDEFB;border-radius:14px;padding:16px;margin-bottom:16px">
-    <div style="font-size:14px;font-weight:900;color:#1565C0;margin-bottom:14px;display:flex;align-items:center;gap:8px">
-      💳 To'lov sozlamalari
+  // ===== PRODUCTS TAB =====
+  if(adminTab==='products'){
+    html+=`
+    <div style="font-size:12px;color:#888;margin-bottom:14px;background:#FFF0F2;padding:10px 12px;border-radius:10px;font-weight:600;display:flex;align-items:center;gap:8px">
+      🔐 <span>Admin panel — <b style="color:var(--red)">${prods.length} ta mahsulot</b></span>
     </div>
-
-    <!-- KARTA RAQAMI -->
-    <div style="margin-bottom:14px">
-      <div class="adm-input-label" style="margin-bottom:6px">💳 Karta raqami (Click / Payme / Uzum uchun)</div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input class="adm-input" id="adm_card_num" placeholder="5614 0000 0000 0000"
-          style="font-family:monospace;font-size:14px;font-weight:800;letter-spacing:1px;flex:1"
-          oninput="(function(el){let v=el.value.replace(/\D/g,'').substring(0,16);el.value=v.replace(/(.{4})/g,'$1 ').trim();})(this)"/>
-        <button onclick="admSaveCard()"
-          style="padding:9px 16px;background:linear-gradient(135deg,#1565C0,#1976D2);color:white;border:none;border-radius:10px;font-family:'Nunito',sans-serif;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;box-shadow:0 3px 10px rgba(21,101,192,0.4)">
-          💾 Saqlash
-        </button>
+    <!-- YANGI MAHSULOT QO'SHISH -->
+    <div style="background:linear-gradient(135deg,#E8F5E9,#F1F8E9);border:2px dashed var(--green);border-radius:14px;padding:16px;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:900;color:#2E7D32;margin-bottom:12px">➕ Yangi mahsulot qo'shish</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div class="adm-input-group"><span class="adm-input-label">🇺🇿 Nomi UZ</span><input class="adm-input" id="new_uz" placeholder="UZ nomini kiriting..."/></div>
+        <div class="adm-input-group"><span class="adm-input-label">🇷🇺 Nomi RU</span><input class="adm-input" id="new_ru" placeholder="RU nomini kiriting..."/></div>
       </div>
-      <div style="font-size:11px;color:#888;margin-top:5px;font-weight:600">
-        Saqlangandan so'ng barcha to'lov usullarida (Click, Payme, Uzum) ushbu karta raqami ko'rsatiladi
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+        <div class="adm-input-group"><span class="adm-input-label">💰 Narxi (UZS)</span><input class="adm-input" id="new_price" type="number" placeholder="15000" style="color:var(--red);font-weight:800"/></div>
+        <div class="adm-input-group"><span class="adm-input-label">📦 Dona/quti</span><input class="adm-input" id="new_dona" type="number" placeholder="12" value="1"/></div>
+        <div class="adm-input-group"><span class="adm-input-label">😊 Emoji</span><input class="adm-input" id="new_emoji" placeholder="🍦" value="🍦"/></div>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+        <div class="adm-input-group"><span class="adm-input-label">📂 Kategoriya</span><select class="adm-input" id="new_cat" style="cursor:pointer">${catOptions}</select></div>
+        <div class="adm-input-group"><span class="adm-input-label">🏷️ Badge</span>
+          <select class="adm-input" id="new_badge" style="cursor:pointer">
+            <option value="">Yo'q</option><option value="new">🆕 New</option>
+            <option value="hit">🔥 Hit</option><option value="premium">⭐ Premium</option>
+          </select>
+        </div>
+      </div>
+      <button onclick="addProduct()" style="width:100%;padding:13px;background:linear-gradient(135deg,var(--green),#388E3C);color:white;border:none;border-radius:12px;font-family:'Nunito',sans-serif;font-size:15px;font-weight:900;cursor:pointer;box-shadow:0 4px 14px rgba(122,201,67,0.4)">➕ Mahsulot qo'shish</button>
     </div>
+    <div style="font-size:12px;font-weight:700;color:#888;margin-bottom:10px;text-align:center">— Mavjud mahsulotlar —</div>`;
 
-    <!-- KARTA EGASI -->
-    <div style="margin-bottom:14px">
-      <div class="adm-input-label" style="margin-bottom:6px">👤 Karta egasining ismi</div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input class="adm-input" id="adm_card_owner" placeholder="Masalan: Dilshod Khasanov" style="flex:1"/>
-        <button onclick="admSaveCard()"
-          style="padding:9px 16px;background:linear-gradient(135deg,#1565C0,#1976D2);color:white;border:none;border-radius:10px;font-family:'Nunito',sans-serif;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;box-shadow:0 3px 10px rgba(21,101,192,0.4)">
-          💾 Saqlash
-        </button>
+    prods.forEach(p=>{
+      const isInactive=!!p.inactive;
+      html+=`
+      <div class="adm-item" id="adm_card_${p.id}" style="${isInactive?'opacity:0.55;border-color:#ccc;':''}">
+        <div class="adm-item-top">
+          <div class="adm-img">
+            ${pImgs[p.id]
+              ?`<img src="${pImgs[p.id]}" style="width:46px;height:46px;border-radius:10px;object-fit:cover${isInactive?';filter:grayscale(1)':''}">`
+              :`<span style="font-size:34px;${isInactive?'filter:grayscale(1)':''}">${p.e}</span>`}
+          </div>
+          <div class="adm-info" style="flex:1;min-width:0">
+            <div class="adm-name" style="${isInactive?'text-decoration:line-through;color:#aaa;':''}">${pN(p)}</div>
+            <div class="adm-price" style="${isInactive?'color:#aaa;':''}">${fmt(p.price)} UZS • ${p.dona} dona</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+            <label class="upload-lbl" style="flex-shrink:0">📷 Rasm<input type="file" accept="image/*" onchange="uploadImg(${p.id},this)"></label>
+            ${pImgs[p.id]?`<button onclick="deleteImg(${p.id})" style="font-size:11px;background:#FFF0F2;color:var(--red);border:1px solid #FFD6D8;border-radius:6px;padding:3px 8px;cursor:pointer;font-family:'Nunito',sans-serif;font-weight:700">🗑 Rasm</button>`:''}
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:center;padding:6px 0;border-radius:10px;background:${isInactive?'#FFF3E0':'#E8F5E9'};border:1.5px solid ${isInactive?'#FFB74D':'#81C784'}">
+          <span style="font-size:12px;font-weight:800;color:${isInactive?'#E65100':'#2E7D32'}">${isInactive?'🔴 Nofaol — mijozlarda ko\'rinmaydi':'🟢 Faol — mijozlarda ko\'rinadi'}</span>
+        </div>
+        <div class="adm-inputs">
+          <div class="adm-input-group"><span class="adm-input-label">🇺🇿 Nomi UZ</span><input class="adm-input" id="adm_uz_${p.id}" value="${p.uz.replace(/"/g,'&quot;')}" placeholder="UZ nomi..."/></div>
+          <div class="adm-input-group"><span class="adm-input-label">🇷🇺 Nomi RU</span><input class="adm-input" id="adm_ru_${p.id}" value="${p.ru.replace(/"/g,'&quot;')}" placeholder="RU nomi..."/></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="adm-input-group"><span class="adm-input-label">💰 Narxi (UZS)</span><input class="adm-input" id="adm_price_${p.id}" type="number" value="${p.price}" style="font-size:14px;font-weight:900;color:var(--red)"/></div>
+          <div class="adm-input-group"><span class="adm-input-label">📦 Dona/quti</span><input class="adm-input" id="adm_dona_${p.id}" type="number" value="${p.dona}"/></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px">
+          <button class="adm-save-btn" onclick="saveProduct(${p.id})">💾 Saqlash</button>
+          <button onclick="toggleProduct(${p.id})" title="${isInactive?'Faollashtirish':'Nofaol qilish'}"
+            style="padding:10px 14px;background:${isInactive?'linear-gradient(135deg,#66BB6A,#388E3C)':'linear-gradient(135deg,#FFA726,#E65100)'};color:white;border:none;border-radius:10px;font-size:15px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.15)">
+            ${isInactive?'✅':'⏸️'}
+          </button>
+          <button onclick="deleteProduct(${p.id})" title="O'chirish"
+            style="padding:10px 14px;background:linear-gradient(135deg,#FF5252,#D32F2F);color:white;border:none;border-radius:10px;font-size:15px;cursor:pointer;box-shadow:0 3px 10px rgba(255,82,82,0.35)">
+            🗑️
+          </button>
+        </div>
+      </div>`;
+    });
+  }
+
+  // ===== CATEGORIES TAB =====
+  else if(adminTab==='cats'){
+    html+=`
+    <div style="background:linear-gradient(135deg,#E3F2FD,#EDE7F6);border:2px solid #BBDEFB;border-radius:14px;padding:16px;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:900;color:#1565C0;margin-bottom:14px">📂 Yangi kategoriya qo'shish</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+        <div class="adm-input-group"><span class="adm-input-label">🇺🇿 Nomi UZ</span><input class="adm-input" id="new_cat_uz" placeholder="🍦 Kategoriya..."/></div>
+        <div class="adm-input-group"><span class="adm-input-label">🇷🇺 Nomi RU</span><input class="adm-input" id="new_cat_ru" placeholder="🍦 Категория..."/></div>
       </div>
+      <div class="adm-input-group" style="margin-bottom:12px"><span class="adm-input-label">🔑 ID (lotin harflar, bog'lovchisiz)</span><input class="adm-input" id="new_cat_id" placeholder="icecream"/></div>
+      <button onclick="addCategory()" style="width:100%;padding:12px;background:linear-gradient(135deg,#1565C0,#1976D2);color:white;border:none;border-radius:12px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:900;cursor:pointer;box-shadow:0 4px 14px rgba(21,101,192,0.35)">➕ Kategoriya qo'shish</button>
     </div>
+    <div style="font-size:12px;font-weight:700;color:#888;margin-bottom:10px;text-align:center">— Mavjud kategoriyalar —</div>`;
+    cats.forEach((c,i)=>{
+      const isAll = c.id==='all';
+      html+=`
+      <div style="background:white;border:1.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:900">${c.uz}</div>
+          <div style="font-size:11px;color:#888">${c.ru} · ID: <code style="background:#f5f5f5;padding:1px 5px;border-radius:4px">${c.id}</code></div>
+        </div>
+        ${isAll?`<span style="font-size:11px;color:#aaa;font-weight:700">O'zgartirib bo'lmaydi</span>`:`
+        <button onclick="editCategory(${i})" style="padding:8px 12px;background:linear-gradient(135deg,#1976D2,#0D47A1);color:white;border:none;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;font-family:'Nunito',sans-serif">✏️</button>
+        <button onclick="deleteCategory(${i})" style="padding:8px 12px;background:linear-gradient(135deg,#FF5252,#D32F2F);color:white;border:none;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;font-family:'Nunito',sans-serif">🗑️</button>`}
+      </div>`;
+    });
+  }
 
-    <!-- QR KOD -->
-    <div>
-      <div class="adm-input-label" style="margin-bottom:8px">🔲 Bank o'tkazma QR-kod rasmi</div>
+  // ===== PAYMENT METHODS TAB =====
+  else if(adminTab==='payment'){
+    html+=`
+    <!-- KARTA/QR -->
+    <div style="background:linear-gradient(135deg,#E3F2FD,#EDE7F6);border:2px solid #BBDEFB;border-radius:14px;padding:16px;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:900;color:#1565C0;margin-bottom:14px">💳 Karta ma'lumotlari</div>
+      <div style="margin-bottom:12px">
+        <div class="adm-input-label" style="margin-bottom:6px">💳 Karta raqami</div>
+        <div style="display:flex;gap:8px">
+          <input class="adm-input" id="adm_card_num" placeholder="5614 0000 0000 0000"
+            style="font-family:monospace;font-size:14px;font-weight:800;letter-spacing:1px;flex:1"
+            oninput="(function(el){let v=el.value.replace(/\\D/g,'').substring(0,16);el.value=v.replace(/(.{4})/g,'$1 ').trim();})(this)"/>
+          <button onclick="admSaveCard()" style="padding:9px 14px;background:linear-gradient(135deg,#1565C0,#1976D2);color:white;border:none;border-radius:10px;font-family:'Nunito',sans-serif;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap">💾 Saqlash</button>
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <div class="adm-input-label" style="margin-bottom:6px">👤 Karta egasi</div>
+        <div style="display:flex;gap:8px">
+          <input class="adm-input" id="adm_card_owner" placeholder="Masalan: Dilshod Khasanov" style="flex:1"/>
+          <button onclick="admSaveCard()" style="padding:9px 14px;background:linear-gradient(135deg,#1565C0,#1976D2);color:white;border:none;border-radius:10px;font-family:'Nunito',sans-serif;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap">💾 Saqlash</button>
+        </div>
+      </div>
+      <!-- QR -->
+      <div class="adm-input-label" style="margin-bottom:8px">🔲 Bank QR-kod</div>
       <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
         <div id="adm_qr_preview_wrap" style="display:none;flex-direction:column;align-items:center;gap:4px">
           <img id="adm_qr_preview" src="" alt="QR" style="width:90px;height:90px;border-radius:10px;border:2px solid #BBDEFB;object-fit:contain;background:white;padding:4px"/>
           <span style="font-size:10px;color:#888;font-weight:700">Joriy QR</span>
         </div>
         <div style="flex:1;min-width:160px">
-          <label style="display:block;background:white;border:2px dashed #BBDEFB;border-radius:10px;padding:14px;text-align:center;cursor:pointer;transition:border-color 0.2s"
-            onmouseover="this.style.borderColor='#1565C0'" onmouseout="this.style.borderColor='#BBDEFB'">
+          <label style="display:block;background:white;border:2px dashed #BBDEFB;border-radius:10px;padding:14px;text-align:center;cursor:pointer">
             <span style="font-size:22px;display:block;margin-bottom:6px">📤</span>
-            <span style="font-size:12px;color:#888;font-weight:700">QR rasm yuklash</span><br>
-            <span style="font-size:11px;color:#aaa">PNG, JPG · max 2MB</span>
+            <span style="font-size:12px;color:#888;font-weight:700">QR rasm yuklash</span>
             <input type="file" accept="image/*" style="display:none" onchange="admUploadQR(event)"/>
           </label>
-          <button onclick="admSaveQR()" style="margin-top:8px;width:100%;padding:10px;background:linear-gradient(135deg,#1565C0,#1976D2);color:white;border:none;border-radius:10px;font-family:'Nunito',sans-serif;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 3px 10px rgba(21,101,192,0.4)">
-            💾 QR-kodni saqlash
-          </button>
-          <button id="adm_qr_remove_btn" onclick="admRemoveQR()" style="display:none;margin-top:6px;width:100%;padding:8px;background:#FFF0F2;color:var(--red);border:1.5px solid #FFD6D8;border-radius:10px;font-family:'Nunito',sans-serif;font-size:12px;font-weight:800;cursor:pointer">
-            🗑 QR-kodni o'chirish
-          </button>
+          <button onclick="admSaveQR()" style="margin-top:8px;width:100%;padding:10px;background:linear-gradient(135deg,#1565C0,#1976D2);color:white;border:none;border-radius:10px;font-family:'Nunito',sans-serif;font-size:13px;font-weight:800;cursor:pointer">💾 QR saqlash</button>
+          <button id="adm_qr_remove_btn" onclick="admRemoveQR()" style="display:none;margin-top:6px;width:100%;padding:8px;background:#FFF0F2;color:var(--red);border:1.5px solid #FFD6D8;border-radius:10px;font-family:'Nunito',sans-serif;font-size:12px;font-weight:800;cursor:pointer">🗑 QR o'chirish</button>
         </div>
-      </div>
-      <div style="font-size:11px;color:#888;margin-top:8px;font-weight:600">
-        Bank o'tkazma bo'limida ko'rsatiladigan QR-kod rasmi
       </div>
     </div>
-  </div>
 
-  <!-- YANGI MAHSULOT QO'SHISH -->
-  <div style="background:linear-gradient(135deg,#E8F5E9,#F1F8E9);border:2px dashed var(--green);border-radius:14px;padding:16px;margin-bottom:16px">
-    <div style="font-size:14px;font-weight:900;color:#2E7D32;margin-bottom:12px;display:flex;align-items:center;gap:8px">
-      ➕ Yangi mahsulot qo'shish
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-      <div class="adm-input-group">
-        <span class="adm-input-label">🇺🇿 Nomi UZ</span>
-        <input class="adm-input" id="new_uz" placeholder="UZ nomini kiriting..."/>
-      </div>
-      <div class="adm-input-group">
-        <span class="adm-input-label">🇷🇺 Nomi RU</span>
-        <input class="adm-input" id="new_ru" placeholder="RU nomini kiriting..."/>
-      </div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
-      <div class="adm-input-group">
-        <span class="adm-input-label">💰 Narxi (UZS)</span>
-        <input class="adm-input" id="new_price" type="number" placeholder="Masalan: 15000" style="color:var(--red);font-weight:800"/>
-      </div>
-      <div class="adm-input-group">
-        <span class="adm-input-label">📦 Dona/quti</span>
-        <input class="adm-input" id="new_dona" type="number" placeholder="Masalan: 12" value="1"/>
-      </div>
-      <div class="adm-input-group">
-        <span class="adm-input-label">😊 Emoji</span>
-        <input class="adm-input" id="new_emoji" placeholder="Masalan: 🍦" value="🍦"/>
-      </div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-      <div class="adm-input-group">
-        <span class="adm-input-label">📂 Kategoriya</span>
-        <select class="adm-input" id="new_cat" style="cursor:pointer">${catOptions}</select>
-      </div>
-      <div class="adm-input-group">
-        <span class="adm-input-label">🏷️ Badge (ixtiyoriy)</span>
-        <select class="adm-input" id="new_badge" style="cursor:pointer">
-          <option value="">Yo'q</option>
-          <option value="new">🆕 New</option>
-          <option value="hit">🔥 Hit</option>
-          <option value="premium">⭐ Premium</option>
-        </select>
-      </div>
-    </div>
-    <button onclick="addProduct()"
-      style="width:100%;padding:13px;background:linear-gradient(135deg,var(--green),#388E3C);color:white;border:none;border-radius:12px;font-family:'Nunito',sans-serif;font-size:15px;font-weight:900;cursor:pointer;box-shadow:0 4px 14px rgba(122,201,67,0.4)">
-      ➕ Mahsulot qo'shish
-    </button>
-  </div>
-
-  <div style="font-size:12px;font-weight:700;color:#888;margin-bottom:10px;text-align:center">— Mavjud mahsulotlar —</div>`;
-
-  // ===== MAVJUD MAHSULOTLAR =====
-  prods.forEach(p=>{
-    const isInactive = !!p.inactive;
-    html+=`
-    <div class="adm-item" id="adm_card_${p.id}" style="${isInactive?'opacity:0.55;border-color:#ccc;':''}">
-
-      <!-- YUQORI QATOR -->
-      <div class="adm-item-top">
-        <div class="adm-img">
-          ${pImgs[p.id]
-            ?`<img src="${pImgs[p.id]}" style="width:46px;height:46px;border-radius:10px;object-fit:cover${isInactive?';filter:grayscale(1)':''}">`
-            :`<span style="font-size:34px;${isInactive?'filter:grayscale(1)':''}">${p.e}</span>`}
+    <!-- TO'LOV USULLARINI YOQISH/O'CHIRISH -->
+    <div style="background:linear-gradient(135deg,#F3E5F5,#EDE7F6);border:2px solid #CE93D8;border-radius:14px;padding:16px;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:900;color:#6A1B9A;margin-bottom:14px">⚙️ To'lov usullarini sozlash</div>
+      ${Object.entries(payMethods).map(([key,m])=>`
+      <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;background:white;border-radius:10px;margin-bottom:8px;border:1.5px solid #E1BEE7">
+        <span style="font-size:20px">${m.icon}</span>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:800">${m.label}</div>
+          <input class="adm-input" id="pay_label_${key}" value="${m.label}" placeholder="Nom..." style="margin-top:4px;font-size:12px;padding:5px 8px"/>
         </div>
-        <div class="adm-info" style="flex:1;min-width:0">
-          <div class="adm-name" style="${isInactive?'text-decoration:line-through;color:#aaa;':''}">${pN(p)}</div>
-          <div class="adm-price" style="${isInactive?'color:#aaa;':''}">${fmt(p.price)} UZS • ${p.dona} dona</div>
+        <div onclick="togglePayMethod('${key}')"
+          style="width:42px;height:24px;border-radius:12px;background:${m.enabled?'#4CAF50':'#ccc'};position:relative;cursor:pointer;transition:background 0.2s;flex-shrink:0">
+          <div style="width:18px;height:18px;border-radius:50%;background:white;position:absolute;top:3px;left:${m.enabled?'21':'3'}px;transition:left 0.2s;box-shadow:0 2px 4px rgba(0,0,0,0.2)"></div>
         </div>
-        <label class="upload-lbl" style="flex-shrink:0">
-          📷 Rasm<input type="file" accept="image/*" onchange="uploadImg(${p.id},this)">
-        </label>
-      </div>
-
-      <!-- STATUS BADGE -->
-      <div style="display:flex;align-items:center;justify-content:center;padding:6px 0;border-radius:10px;background:${isInactive?'#FFF3E0':'#E8F5E9'};border:1.5px solid ${isInactive?'#FFB74D':'#81C784'}">
-        <span style="font-size:12px;font-weight:800;color:${isInactive?'#E65100':'#2E7D32'}">
-          ${isInactive?'🔴 Nofaol — mijozlarda ko\'rinmaydi':'🟢 Faol — mijozlarda ko\'rinadi'}
-        </span>
-      </div>
-
-      <!-- NOM MAYDONLARI -->
-      <div class="adm-inputs">
-        <div class="adm-input-group">
-          <span class="adm-input-label">🇺🇿 Nomi UZ</span>
-          <input class="adm-input" id="adm_uz_${p.id}" value="${p.uz.replace(/"/g,'&quot;')}" placeholder="UZ nomi..."/>
-        </div>
-        <div class="adm-input-group">
-          <span class="adm-input-label">🇷🇺 Nomi RU</span>
-          <input class="adm-input" id="adm_ru_${p.id}" value="${p.ru.replace(/"/g,'&quot;')}" placeholder="RU nomi..."/>
-        </div>
-      </div>
-
-      <!-- NARX + DONA -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div class="adm-input-group">
-          <span class="adm-input-label">💰 Narxi (UZS)</span>
-          <input class="adm-input" id="adm_price_${p.id}" type="number" value="${p.price}"
-            style="font-size:14px;font-weight:900;color:var(--red)" placeholder="Narx..."/>
-        </div>
-        <div class="adm-input-group">
-          <span class="adm-input-label">📦 Dona/quti</span>
-          <input class="adm-input" id="adm_dona_${p.id}" type="number" value="${p.dona}" placeholder="Dona..."/>
-        </div>
-      </div>
-
-      <!-- TUGMALAR: SAQLASH | FAOL/NOFAOL | O'CHIRISH -->
-      <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px">
-        <button class="adm-save-btn" onclick="saveProduct(${p.id})">
-          💾 Saqlash
-        </button>
-        <button onclick="toggleProduct(${p.id})"
-          title="${isInactive?'Faollashtirish':'Nofaol qilish'}"
-          style="padding:10px 14px;background:${isInactive?'linear-gradient(135deg,#66BB6A,#388E3C)':'linear-gradient(135deg,#FFA726,#E65100)'};color:white;border:none;border-radius:10px;font-size:15px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.15)">
-          ${isInactive?'✅':'⏸️'}
-        </button>
-        <button onclick="deleteProduct(${p.id})"
-          title="O'chirish"
-          style="padding:10px 14px;background:linear-gradient(135deg,#FF5252,#D32F2F);color:white;border:none;border-radius:10px;font-size:15px;cursor:pointer;box-shadow:0 3px 10px rgba(255,82,82,0.35)">
-          🗑️
-        </button>
-      </div>
-
+      </div>`).join('')}
+      <button onclick="savePayMethodsAdmin()" style="width:100%;padding:12px;background:linear-gradient(135deg,#6A1B9A,#7B1FA2);color:white;border:none;border-radius:12px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:900;cursor:pointer;margin-top:4px;box-shadow:0 4px 14px rgba(106,27,154,0.35)">💾 Sozlamalarni saqlash</button>
     </div>`;
-  });
+  }
+
+  // ===== STATISTICS TAB =====
+  else if(adminTab==='stats'){
+    const activeProd = prods.filter(p=>!p.inactive).length;
+    const inactiveProd = prods.filter(p=>p.inactive).length;
+    html+=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <div style="background:linear-gradient(135deg,var(--red),var(--pink));border-radius:14px;padding:16px;color:white;text-align:center">
+        <div style="font-size:28px;font-weight:900">${orderStats.total}</div>
+        <div style="font-size:11px;font-weight:700;opacity:0.9">Jami buyurtmalar</div>
+      </div>
+      <div style="background:linear-gradient(135deg,var(--orange),#e65100);border-radius:14px;padding:16px;color:white;text-align:center">
+        <div style="font-size:20px;font-weight:900">${fmt(orderStats.revenue)}</div>
+        <div style="font-size:11px;font-weight:700;opacity:0.9">Jami daromad (UZS)</div>
+      </div>
+      <div style="background:linear-gradient(135deg,var(--blue),#0D47A1);border-radius:14px;padding:16px;color:white;text-align:center">
+        <div style="font-size:28px;font-weight:900">${orderStats.today}</div>
+        <div style="font-size:11px;font-weight:700;opacity:0.9">Bugungi buyurtmalar</div>
+      </div>
+      <div style="background:linear-gradient(135deg,var(--green),#2E7D32);border-radius:14px;padding:16px;color:white;text-align:center">
+        <div style="font-size:20px;font-weight:900">${fmt(orderStats.todayRev)}</div>
+        <div style="font-size:11px;font-weight:700;opacity:0.9">Bugungi daromad (UZS)</div>
+      </div>
+    </div>
+    <div style="background:white;border:1.5px solid var(--border);border-radius:14px;padding:16px;margin-bottom:12px">
+      <div style="font-size:14px;font-weight:900;margin-bottom:12px">🛍️ Mahsulotlar holati</div>
+      <div style="display:flex;gap:10px">
+        <div style="flex:1;text-align:center;padding:12px;background:#E8F5E9;border-radius:10px">
+          <div style="font-size:22px;font-weight:900;color:#2E7D32">${activeProd}</div>
+          <div style="font-size:11px;color:#555;font-weight:700">Faol</div>
+        </div>
+        <div style="flex:1;text-align:center;padding:12px;background:#FFF3E0;border-radius:10px">
+          <div style="font-size:22px;font-weight:900;color:#E65100">${inactiveProd}</div>
+          <div style="font-size:11px;color:#555;font-weight:700">Nofaol</div>
+        </div>
+        <div style="flex:1;text-align:center;padding:12px;background:#EDE7F6;border-radius:10px">
+          <div style="font-size:22px;font-weight:900;color:#6A1B9A">${prods.length}</div>
+          <div style="font-size:11px;color:#555;font-weight:700">Jami</div>
+        </div>
+      </div>
+    </div>
+    <button onclick="if(confirm('Statistikani tozalaysizmi?')){localStorage.removeItem('cono_stats');orderStats={total:0,revenue:0,today:0,todayRev:0,lastDate:''};renderAdmin();showToast('🗑️ Statistika tozalandi');}"
+      style="width:100%;padding:11px;background:#FFF0F2;color:var(--red);border:1.5px solid #FFD6D8;border-radius:12px;font-family:'Nunito',sans-serif;font-size:13px;font-weight:800;cursor:pointer">
+      🗑️ Statistikani tozalash
+    </button>`;
+  }
+
+  // ===== BROADCAST TAB =====
+  else if(adminTab==='broadcast'){
+    html+=`
+    <div style="background:linear-gradient(135deg,#E8F5E9,#F1F8E9);border:2px solid var(--green);border-radius:14px;padding:16px;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:900;color:#2E7D32;margin-bottom:6px">📢 Guruhga xabar yuborish</div>
+      <div style="font-size:12px;color:#666;margin-bottom:14px;line-height:1.5">Telegram guruhingizga (${GROUP_CHAT_ID}) to'g'ridan xabar yuborish</div>
+      <textarea id="broadcastMsg" style="width:100%;min-height:120px;border:1.5px solid var(--border);border-radius:10px;padding:10px;font-family:'Nunito',sans-serif;font-size:13px;resize:vertical;outline:none;line-height:1.5" placeholder="Xabar matnini kiriting...&#10;&#10;Masalan:&#10;🎉 Yangi mahsulot: Maxsus to'plam!&#10;💰 Narx: 150,000 UZS&#10;📞 Buyurtma: @ConoIceCream_bot"></textarea>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button onclick="sendBroadcast()" style="flex:1;padding:13px;background:linear-gradient(135deg,var(--green),#2E7D32);color:white;border:none;border-radius:12px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:900;cursor:pointer;box-shadow:0 4px 14px rgba(122,201,67,0.4)">📤 Yuborish</button>
+        <button onclick="document.getElementById('broadcastMsg').value=''" style="padding:13px 16px;background:#f5f5f5;color:#555;border:1.5px solid #ddd;border-radius:12px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:800;cursor:pointer">🗑</button>
+      </div>
+    </div>
+    <div style="background:white;border:1.5px solid var(--border);border-radius:14px;padding:14px">
+      <div style="font-size:13px;font-weight:900;margin-bottom:8px">💡 Tayyor shablonlar</div>
+      ${[
+        {t:'🎉 Yangi mahsulot!', m:'🎉 Yangi mahsulot qo\'shildi!\n\n🍦 Nom: [mahsulot nomi]\n💰 Narx: [narx] UZS\n\nBuyurtma berish: @ConoIceCream_bot'},
+        {t:'⚠️ Ish vaqti o\'zgardi', m:'⚠️ Ish vaqti haqida ma\'lumot:\n\n🕐 [yangi vaqt]\n\nUzr so\'raymiz va tushunganingiz uchun rahmat! 🙏'},
+        {t:'🛵 Yetkazib berish', m:'🚀 Xurmatli mijozlar!\n\nBugungi buyurtmalar yetkazib berilmoqda. Operator tez orada bog\'lanadi.\n\nRahmat! ❤️ CONO'},
+        {t:'🎁 Aksiya!', m:'🎁 Maxsus taklif!\n\n[aksiya tavsifi]\n\nFaqat [sanagacha] amal qiladi!\n\nBuyurtma: @ConoIceCream_bot'},
+      ].map(s=>`
+      <button onclick="document.getElementById('broadcastMsg').value=${JSON.stringify(s.m)}"
+        style="width:100%;text-align:left;padding:10px 12px;background:#FFF5F7;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;font-family:'Nunito',sans-serif;font-size:12px;font-weight:700;color:var(--text)">
+        ${s.t}
+      </button>`).join('')}
+    </div>`;
+  }
 
   document.getElementById('adminBody').innerHTML=html;
 
-  // Saqlangan to'lov ma'lumotlarini fieldlarga to'ldirish
-  const savedNum   = localStorage.getItem(ADM_CARD_KEY);
-  const savedOwner = localStorage.getItem(ADM_OWNER_KEY);
-  const savedQR    = localStorage.getItem(ADM_QR_KEY);
-  if(savedNum){
-    const el = document.getElementById('adm_card_num');
-    if(el) el.value = savedNum;
+  // Payment tab: load saved card/qr data
+  if(adminTab==='payment'){
+    const savedNum=localStorage.getItem(ADM_CARD_KEY);
+    const savedOwner=localStorage.getItem(ADM_OWNER_KEY);
+    const savedQR=localStorage.getItem(ADM_QR_KEY);
+    if(savedNum){ const el=document.getElementById('adm_card_num'); if(el) el.value=savedNum; }
+    if(savedOwner){ const el=document.getElementById('adm_card_owner'); if(el) el.value=savedOwner; }
+    if(savedQR){
+      const wrap=document.getElementById('adm_qr_preview_wrap');
+      const img=document.getElementById('adm_qr_preview');
+      const rb=document.getElementById('adm_qr_remove_btn');
+      if(wrap) wrap.style.display='flex';
+      if(img) img.src=savedQR;
+      if(rb) rb.style.display='block';
+    }
   }
-  if(savedOwner){
-    const el = document.getElementById('adm_card_owner');
-    if(el) el.value = savedOwner;
-  }
-  if(savedQR){
-    const wrap = document.getElementById('adm_qr_preview_wrap');
-    const img  = document.getElementById('adm_qr_preview');
-    const rb   = document.getElementById('adm_qr_remove_btn');
-    if(wrap) wrap.style.display='flex';
-    if(img)  img.src = savedQR;
-    if(rb)   rb.style.display='block';
-  }
+}
+
+// ===== CATEGORY MANAGEMENT =====
+function addCategory(){
+  const uz=(document.getElementById('new_cat_uz').value||'').trim();
+  const ru=(document.getElementById('new_cat_ru').value||'').trim();
+  const id=(document.getElementById('new_cat_id').value||'').trim().toLowerCase().replace(/\s+/g,'_');
+  if(!uz||!ru||!id){showToast('❗ Barcha maydonlarni to\'ldiring');return;}
+  if(cats.find(c=>c.id===id)){showToast('❗ Bu ID allaqachon mavjud');return;}
+  cats.push({id,uz,ru});
+  saveCats();
+  renderCats();
+  renderAdmin();
+  showToast('✅ Kategoriya qo\'shildi!');
+}
+
+function editCategory(i){
+  const c=cats[i];
+  if(!c||c.id==='all')return;
+  const uz=prompt('UZ nomi:',c.uz);
+  if(uz===null)return;
+  const ru=prompt('RU nomi:',c.ru);
+  if(ru===null)return;
+  cats[i].uz=uz.trim()||c.uz;
+  cats[i].ru=ru.trim()||c.ru;
+  saveCats();
+  renderCats();
+  renderAdmin();
+  showToast('✅ Kategoriya tahrirlandi!');
+}
+
+function deleteCategory(i){
+  const c=cats[i];
+  if(!c||c.id==='all')return;
+  if(!confirm(`"${c.uz}" kategoriyasini o'chirasizmi?\nBu kategoriyadagi mahsulotlar ham ko'rinmay qoladi.`))return;
+  cats.splice(i,1);
+  saveCats();
+  if(activeCat===c.id) activeCat='all';
+  renderCats();
+  renderProds();
+  renderAdmin();
+  showToast('🗑️ Kategoriya o\'chirildi!');
+}
+
+// ===== PAYMENT METHODS ADMIN =====
+function togglePayMethod(key){
+  payMethods[key].enabled=!payMethods[key].enabled;
+  renderAdmin(); // re-render to update toggles
+}
+
+function savePayMethodsAdmin(){
+  // Update labels from inputs
+  Object.keys(payMethods).forEach(key=>{
+    const el=document.getElementById('pay_label_'+key);
+    if(el && el.value.trim()) payMethods[key].label=el.value.trim();
+  });
+  savePayMethods();
+  renderPayOpts();
+  showToast('✅ To\'lov sozlamalari saqlandi!');
+}
+
+// ===== BROADCAST =====
+async function sendBroadcast(){
+  const msg=(document.getElementById('broadcastMsg').value||'').trim();
+  if(!msg){showToast('❗ Xabar matnini kiriting');return;}
+  const btn=document.querySelector('#adminBody button[onclick="sendBroadcast()"]');
+  if(btn){btn.textContent='⏳ Yuborilmoqda...';btn.disabled=true;}
+  try{
+    const res=await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({chat_id:GROUP_CHAT_ID,text:`📢 *ADMIN XABARI*\n\n${msg}`,parse_mode:'Markdown'})
+    });
+    const data=await res.json();
+    if(data.ok){showToast('✅ Xabar yuborildi!');}
+    else{showToast('❌ '+(data.description||'Xatolik'));}
+  }catch(e){showToast('❌ Internet xatosi');}
+  if(btn){btn.textContent='📤 Yuborish';btn.disabled=false;}
 }
 
 async function addProduct(){
@@ -2236,9 +2454,33 @@ async function saveProduct(id){
 
 function uploadImg(id,inp){
   const f=inp.files[0];if(!f)return;
+  if(f.size>3*1024*1024){showToast('❗ Rasm 3MB dan katta!');return;}
   const r=new FileReader();
-  r.onload=e=>{pImgs[id]=e.target.result;renderAdmin();renderProds();showToast(lang==='uz'?'✅ Rasm yuklandi':'✅ Фото загружено');};
+  r.onload=e=>{
+    const data=e.target.result;
+    pImgs[id]=data;
+    // localStorage ga saqlaymiz — sahifa yopilsa ham qoladi
+    try{
+      const saved=JSON.parse(localStorage.getItem('cono_pImgs')||'{}');
+      saved[id]=data;
+      localStorage.setItem('cono_pImgs',JSON.stringify(saved));
+    }catch(err){console.warn('Rasm saqlanmadi (localStorage to\'la bo\'lishi mumkin):',err);}
+    renderAdmin();renderProds();
+    showToast(lang==='uz'?'✅ Rasm saqlandi!':'✅ Фото сохранено!');
+  };
   r.readAsDataURL(f);
+}
+
+function deleteImg(id){
+  if(!confirm('Rasmni o\'chirasizmi?'))return;
+  delete pImgs[id];
+  try{
+    const saved=JSON.parse(localStorage.getItem('cono_pImgs')||'{}');
+    delete saved[id];
+    localStorage.setItem('cono_pImgs',JSON.stringify(saved));
+  }catch(err){}
+  renderAdmin();renderProds();
+  showToast('🗑️ Rasm o\'chirildi');
 }
 
 function openImgViewer(id){
