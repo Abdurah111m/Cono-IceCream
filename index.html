@@ -1068,6 +1068,7 @@ const WORK_START = 9, WORK_END = 18;
 const FREE_DELIVERY = 500000;
 const ZONES = [{max:3,p:10000},{max:7,p:15000},{max:15,p:25000},{max:9999,p:-1}];
 const BACKEND_URL = 'https://cono-backend.onrender.com';
+const ADMIN_SECRET = 'sb_secret_41ad3S7BJv63sHz27UvXdw_RZbtn4y3';
 
 // ===== I18N =====
 let lang='uz';
@@ -2146,7 +2147,7 @@ async function addProduct(){
   if(badge) newProd.b = badge;
 
   try {
-    const res = await fetch(`${BACKEND_URL}/products`, {
+    const res = await fetch(`${BACKEND_URL}/products?secret=${ADMIN_SECRET}`, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(newProd)
@@ -2182,7 +2183,7 @@ async function toggleProduct(id){
     updateCartUI();
   }
   try {
-    await fetch(`${BACKEND_URL}/products/${id}`, {
+    await fetch(`${BACKEND_URL}/products/${id}?secret=${ADMIN_SECRET}`, {
       method:'PATCH',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({inactive: p.inactive})
@@ -2201,7 +2202,7 @@ async function deleteProduct(id){
   if(!p) return;
   if(!confirm(`"${pN(p)}" mahsulotini o'chirasizmi?`)) return;
   try {
-    await fetch(`${BACKEND_URL}/products/${id}`, {method:'DELETE'});
+    await fetch(`${BACKEND_URL}/products/${id}?secret=${ADMIN_SECRET}`, {method:'DELETE'});
   } catch(e){ console.warn('Backend delete xatosi:', e); }
   const idx = prods.findIndex(x=>x.id===id);
   prods.splice(idx, 1);
@@ -2223,7 +2224,7 @@ async function saveProduct(id){
   if(priceVal>0)p.price=priceVal;
   p.dona=donaVal;
   try {
-    await fetch(`${BACKEND_URL}/products/${id}`, {
+    await fetch(`${BACKEND_URL}/products/${id}?secret=${ADMIN_SECRET}`, {
       method:'PUT',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(p)
