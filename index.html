@@ -1984,6 +1984,7 @@ function closeAdmin(){
 
 // ===== ADMIN TAB STATE =====
 let adminTab = 'products'; // 'products' | 'cats' | 'payment' | 'stats' | 'broadcast'
+let adminCatOpen = null; // ochiq kategoriya ID si
 
 function switchAdminTab(tab){
   adminTab=tab;
@@ -2075,12 +2076,6 @@ function renderAdmin(){
           <div class="adm-input-group"><span class="adm-input-label">💰 Narxi (UZS)</span><input class="adm-input" id="adm_price_${p.id}" type="number" value="${p.price}" style="font-size:14px;font-weight:900;color:var(--red)"/></div>
           <div class="adm-input-group"><span class="adm-input-label">📦 Dona/quti</span><input class="adm-input" id="adm_dona_${p.id}" type="number" value="${p.dona}"/></div>
         </div>
-        <div class="adm-input-group" style="margin-top:4px">
-          <span class="adm-input-label">📂 Kategoriya</span>
-          <select class="adm-input" id="adm_cat_${p.id}" style="cursor:pointer">
-            ${cats.filter(c=>c.id!=='all').map(c=>`<option value="${c.id}"${p.cat===c.id?' selected':''}>${c.uz}</option>`).join('')}
-          </select>
-        </div>
         <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px">
           <button class="adm-save-btn" onclick="saveProduct(${p.id})">💾 Saqlash</button>
           <button onclick="toggleProduct(${p.id})" title="${isInactive?'Faollashtirish':'Nofaol qilish'}"
@@ -2108,18 +2103,94 @@ function renderAdmin(){
       <div class="adm-input-group" style="margin-bottom:12px"><span class="adm-input-label">🔑 ID (lotin harflar, bog'lovchisiz)</span><input class="adm-input" id="new_cat_id" placeholder="icecream"/></div>
       <button onclick="addCategory()" style="width:100%;padding:12px;background:linear-gradient(135deg,#1565C0,#1976D2);color:white;border:none;border-radius:12px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:900;cursor:pointer;box-shadow:0 4px 14px rgba(21,101,192,0.35)">➕ Kategoriya qo'shish</button>
     </div>
-    <div style="font-size:12px;font-weight:700;color:#888;margin-bottom:10px;text-align:center">— Mavjud kategoriyalar —</div>`;
+    <div style="font-size:12px;font-weight:700;color:#888;margin-bottom:10px;text-align:center">— Mavjud kategoriyalar (bosing — mahsulotlar ochiladi) —</div>`;
+
     cats.forEach((c,i)=>{
       const isAll = c.id==='all';
+      const catProds = prods.filter(p=>isAll ? true : p.cat===c.id);
+      const activeCnt = catProds.filter(p=>!p.inactive).length;
+      const isOpen = adminCatOpen===c.id;
+      const catOptions = cats.filter(x=>x.id!=='all').map(x=>`<option value="${x.id}"${x.id===c.id?' selected':''}>${x.uz}</option>`).join('');
+
       html+=`
-      <div style="background:white;border:1.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;display:flex;align-items:center;gap:10px">
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:900">${c.uz}</div>
-          <div style="font-size:11px;color:#888">${c.ru} · ID: <code style="background:#f5f5f5;padding:1px 5px;border-radius:4px">${c.id}</code></div>
+      <div style="border-radius:14px;margin-bottom:10px;overflow:hidden;border:2px solid ${isOpen?'var(--red)':'var(--border)'}">
+        <!-- KATEGORIYA HEADER — bosish -->
+        <div onclick="adminCatOpen=adminCatOpen==='${c.id}'?null:'${c.id}';renderAdmin()"
+          style="display:flex;align-items:center;gap:10px;padding:13px 14px;background:${isOpen?'linear-gradient(135deg,var(--red),var(--pink))':'white'};cursor:pointer;user-select:none">
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:900;color:${isOpen?'white':'var(--text)'}">
+              ${c.uz}
+            </div>
+            <div style="font-size:11px;color:${isOpen?'rgba(255,255,255,0.8)':'#888'};margin-top:2px">
+              ${c.ru} · ID: <code style="background:${isOpen?'rgba(255,255,255,0.2)':'#f5f5f5'};padding:1px 5px;border-radius:4px;color:${isOpen?'white':'#555'}">${c.id}</code>
+              · <b style="color:${isOpen?'white':'var(--green)'}">${activeCnt} faol</b> / ${catProds.length} ta
+            </div>
+          </div>
+          ${isAll?`<span style="font-size:11px;color:${isOpen?'rgba(255,255,255,0.7)':'#aaa'};font-weight:700">O'zgartirib bo'lmaydi</span>`:`
+          <button onclick="event.stopPropagation();editCategory(${i})" style="padding:7px 11px;background:${isOpen?'rgba(255,255,255,0.25)':'linear-gradient(135deg,#1976D2,#0D47A1)'};color:white;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-family:'Nunito',sans-serif">✏️</button>
+          <button onclick="event.stopPropagation();deleteCategory(${i})" style="padding:7px 11px;background:${isOpen?'rgba(255,255,255,0.25)':'linear-gradient(135deg,#FF5252,#D32F2F)'};color:white;border:none;border-radius:8px;font-size:12px;cursor:pointer;font-family:'Nunito',sans-serif">🗑️</button>`}
+          <span style="font-size:16px;color:${isOpen?'white':'#aaa'};transform:rotate(${isOpen?'180':'0'}deg);display:inline-block;transition:transform 0.2s">▼</span>
         </div>
-        ${isAll?`<span style="font-size:11px;color:#aaa;font-weight:700">O'zgartirib bo'lmaydi</span>`:`
-        <button onclick="editCategory(${i})" style="padding:8px 12px;background:linear-gradient(135deg,#1976D2,#0D47A1);color:white;border:none;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;font-family:'Nunito',sans-serif">✏️</button>
-        <button onclick="deleteCategory(${i})" style="padding:8px 12px;background:linear-gradient(135deg,#FF5252,#D32F2F);color:white;border:none;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;font-family:'Nunito',sans-serif">🗑️</button>`}
+
+        ${isOpen ? `
+        <!-- MAHSULOTLAR RO'YXATI -->
+        <div style="background:#FAFAFA;padding:12px;border-top:1.5px solid ${isOpen?'rgba(255,29,37,0.15)':'var(--border)'}">
+          ${catProds.length===0
+            ? `<div style="text-align:center;padding:20px;color:#aaa;font-size:13px;font-weight:700">😕 Bu kategoriyada mahsulot yo'q</div>`
+            : catProds.map(p=>{
+                const isInactive=!!p.inactive;
+                return `
+                <div style="background:white;border:1.5px solid ${isInactive?'#ddd':'var(--border)'};border-radius:12px;padding:12px;margin-bottom:8px;${isInactive?'opacity:0.6':''}">
+                  <!-- TOP ROW -->
+                  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                    <div style="width:44px;height:44px;border-radius:10px;overflow:hidden;background:#FFF0F2;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                      ${pImgs[p.id]
+                        ?`<img src="${pImgs[p.id]}" style="width:44px;height:44px;object-fit:cover">`
+                        :`<span style="font-size:28px">${p.e}</span>`}
+                    </div>
+                    <div style="flex:1;min-width:0">
+                      <div style="font-size:13px;font-weight:900;${isInactive?'text-decoration:line-through;color:#aaa':''}">${pN(p)}</div>
+                      <div style="font-size:11px;color:${isInactive?'#aaa':'var(--red)'};font-weight:800">${fmt(p.price)} UZS · ${p.dona} dona</div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:4px">
+                      <label style="background:var(--blue);color:white;border-radius:7px;padding:5px 9px;font-size:11px;font-weight:800;cursor:pointer;font-family:'Nunito',sans-serif;white-space:nowrap">
+                        📷<input type="file" accept="image/*" style="display:none" onchange="uploadImg(${p.id},this);setTimeout(()=>renderAdmin(),300)">
+                      </label>
+                      ${pImgs[p.id]?`<button onclick="deleteImg(${p.id});setTimeout(()=>renderAdmin(),100)" style="background:#FFF0F2;color:var(--red);border:1px solid #FFD6D8;border-radius:7px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Nunito',sans-serif">🗑</button>`:''}
+                    </div>
+                  </div>
+
+                  <!-- TAHRIRLASH MAYDONLARI -->
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+                    <div class="adm-input-group"><span class="adm-input-label">🇺🇿 UZ nomi</span><input class="adm-input" id="adm_uz_${p.id}" value="${p.uz.replace(/"/g,'&quot;')}"/></div>
+                    <div class="adm-input-group"><span class="adm-input-label">🇷🇺 RU nomi</span><input class="adm-input" id="adm_ru_${p.id}" value="${p.ru.replace(/"/g,'&quot;')}"/></div>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+                    <div class="adm-input-group"><span class="adm-input-label">💰 Narx</span><input class="adm-input" id="adm_price_${p.id}" type="number" value="${p.price}" style="color:var(--red);font-weight:900"/></div>
+                    <div class="adm-input-group"><span class="adm-input-label">📦 Dona</span><input class="adm-input" id="adm_dona_${p.id}" type="number" value="${p.dona}"/></div>
+                    <div class="adm-input-group"><span class="adm-input-label">📂 Kategoriya</span>
+                      <select class="adm-input" id="adm_cat_${p.id}" style="cursor:pointer">${catOptions}</select>
+                    </div>
+                  </div>
+
+                  <!-- TUGMALAR -->
+                  <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px">
+                    <button onclick="saveProduct(${p.id}).then(()=>renderAdmin())" class="adm-save-btn">💾 Saqlash</button>
+                    <button onclick="toggleProduct(${p.id})" title="${isInactive?'Faollashtirish':'Nofaol'}"
+                      style="padding:9px 13px;background:${isInactive?'linear-gradient(135deg,#66BB6A,#388E3C)':'linear-gradient(135deg,#FFA726,#E65100)'};color:white;border:none;border-radius:10px;font-size:14px;cursor:pointer">
+                      ${isInactive?'✅':'⏸️'}
+                    </button>
+                    <button onclick="deleteProduct(${p.id})" style="padding:9px 13px;background:linear-gradient(135deg,#FF5252,#D32F2F);color:white;border:none;border-radius:10px;font-size:14px;cursor:pointer">🗑️</button>
+                  </div>
+                </div>`;
+              }).join('')
+          }
+          <!-- YANGI MAHSULOT QO'SHISH (shu kategoriyaga) -->
+          <button onclick="adminTab='products';adminCatOpen=null;renderAdmin();setTimeout(()=>{document.getElementById('new_cat').value='${c.id}';document.getElementById('new_uz').focus();},100)"
+            style="width:100%;padding:11px;background:linear-gradient(135deg,var(--green),#2E7D32);color:white;border:none;border-radius:10px;font-family:'Nunito',sans-serif;font-size:13px;font-weight:800;cursor:pointer;margin-top:4px;box-shadow:0 3px 10px rgba(122,201,67,0.3)">
+            ➕ "${c.uz}" ga yangi mahsulot qo'shish
+          </button>
+        </div>` : ''}
       </div>`;
     });
   }
@@ -2243,22 +2314,18 @@ function renderAdmin(){
       </div>
     </div>
     <div style="background:white;border:1.5px solid var(--border);border-radius:14px;padding:14px">
-      <div style="font-size:13px;font-weight:900;margin-bottom:8px">💡 Tayyor shablonlar</div>`;
-
-  const shablonlar = [
-    {t:'🎉 Yangi mahsulot!',    m:"🎉 Yangi mahsulot qo'shildi!\n\n🍦 Nom: [mahsulot nomi]\n💰 Narx: [narx] UZS\n\nBuyurtma berish: @ConoIceCream_bot"},
-    {t:"⚠️ Ish vaqti o'zgardi", m:"⚠️ Ish vaqti haqida ma'lumot:\n\n🕐 [yangi vaqt]\n\nUzr so'raymiz va tushunganingiz uchun rahmat! 🙏"},
-    {t:'🛵 Yetkazib berish',     m:"🚀 Xurmatli mijozlar!\n\nBugungi buyurtmalar yetkazib berilmoqda. Operator tez orada bog'lanadi.\n\nRahmat! ❤️ CONO"},
-    {t:'🎁 Aksiya!',             m:"🎁 Maxsus taklif!\n\n[aksiya tavsifi]\n\nFaqat [sanagacha] amal qiladi!\n\nBuyurtma: @ConoIceCream_bot"},
-  ];
-  // Shablonlarni global o'zgaruvchiga saqlaymiz — onclick ichida xavfsiz ishlatish uchun
-  window._shablonlar = shablonlar;
-  shablonlar.forEach((s,i)=>{
-    html+=`<button onclick="window._setTemplate(${i})"
-      style="width:100%;text-align:left;padding:10px 12px;background:#FFF5F7;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;font-family:'Nunito',sans-serif;font-size:12px;font-weight:700;color:var(--text)">
-      ${s.t}</button>`;
-  });
-  html+=`</div>`;
+      <div style="font-size:13px;font-weight:900;margin-bottom:8px">💡 Tayyor shablonlar</div>
+      ${[
+        {t:'🎉 Yangi mahsulot!', m:'🎉 Yangi mahsulot qo\'shildi!\n\n🍦 Nom: [mahsulot nomi]\n💰 Narx: [narx] UZS\n\nBuyurtma berish: @ConoIceCream_bot'},
+        {t:'⚠️ Ish vaqti o\'zgardi', m:'⚠️ Ish vaqti haqida ma\'lumot:\n\n🕐 [yangi vaqt]\n\nUzr so\'raymiz va tushunganingiz uchun rahmat! 🙏'},
+        {t:'🛵 Yetkazib berish', m:'🚀 Xurmatli mijozlar!\n\nBugungi buyurtmalar yetkazib berilmoqda. Operator tez orada bog\'lanadi.\n\nRahmat! ❤️ CONO'},
+        {t:'🎁 Aksiya!', m:'🎁 Maxsus taklif!\n\n[aksiya tavsifi]\n\nFaqat [sanagacha] amal qiladi!\n\nBuyurtma: @ConoIceCream_bot'},
+      ].map(s=>`
+      <button onclick="document.getElementById('broadcastMsg').value=${JSON.stringify(s.m)}"
+        style="width:100%;text-align:left;padding:10px 12px;background:#FFF5F7;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;font-family:'Nunito',sans-serif;font-size:12px;font-weight:700;color:var(--text)">
+        ${s.t}
+      </button>`).join('')}
+    </div>`;
   }
 
   document.getElementById('adminBody').innerHTML=html;
@@ -2339,15 +2406,6 @@ function savePayMethodsAdmin(){
   renderPayOpts();
   showToast('✅ To\'lov sozlamalari saqlandi!');
 }
-
-// Shablon tanlash yordamchisi
-window._setTemplate = function(i){
-  const el = document.getElementById('broadcastMsg');
-  if(el && window._shablonlar && window._shablonlar[i]){
-    el.value = window._shablonlar[i].m;
-    el.focus();
-  }
-};
 
 // ===== BROADCAST =====
 async function sendBroadcast(){
