@@ -1262,7 +1262,7 @@ const ADMIN_IDS = [7677968669]; // Faqat shu Telegram ID lar admin ko'ra oladi
 // ===== LOAD PRODUCTS FROM BACKEND =====
 async function loadProducts(){
   try {
-    const res = await fetch(`${BACKEND_URL}/api/products`);
+    const res = await fetch(`${BACKEND_URL}/products`);
     if(!res.ok) throw new Error('Backend xatosi: ' + res.status);
     const data = await res.json();
     // Backend [{ id, uz, ru, cat, e, price, dona, b?, inactive? }] formatida qaytarishi kerak
@@ -2146,7 +2146,7 @@ async function addProduct(){
   if(badge) newProd.b = badge;
 
   try {
-    const res = await fetch(`${BACKEND_URL}/api/products`, {
+    const res = await fetch(`${BACKEND_URL}/products`, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(newProd)
@@ -2182,7 +2182,7 @@ async function toggleProduct(id){
     updateCartUI();
   }
   try {
-    await fetch(`${BACKEND_URL}/api/products/${id}`, {
+    await fetch(`${BACKEND_URL}/products/${id}`, {
       method:'PATCH',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({inactive: p.inactive})
@@ -2201,7 +2201,7 @@ async function deleteProduct(id){
   if(!p) return;
   if(!confirm(`"${pN(p)}" mahsulotini o'chirasizmi?`)) return;
   try {
-    await fetch(`${BACKEND_URL}/api/products/${id}`, {method:'DELETE'});
+    await fetch(`${BACKEND_URL}/products/${id}`, {method:'DELETE'});
   } catch(e){ console.warn('Backend delete xatosi:', e); }
   const idx = prods.findIndex(x=>x.id===id);
   prods.splice(idx, 1);
@@ -2223,7 +2223,7 @@ async function saveProduct(id){
   if(priceVal>0)p.price=priceVal;
   p.dona=donaVal;
   try {
-    await fetch(`${BACKEND_URL}/api/products/${id}`, {
+    await fetch(`${BACKEND_URL}/products/${id}`, {
       method:'PUT',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(p)
