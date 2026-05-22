@@ -1345,6 +1345,8 @@ async function loadProducts(){
     // Backend [{ id, uz, ru, cat, e, price, dona, b?, inactive? }] formatida qaytarishi kerak
     if(Array.isArray(data) && data.length > 0){
       prods = data;
+      // Backenddan kelgan rasmlarni pImgs ga yuklaymiz
+      data.forEach(p => { if(p.img && !pImgs[p.id]) pImgs[p.id]=p.img; });
     } else {
       console.warn('Backend bo\'sh array qaytardi — hardcoded ma\'lumotlar ishlatiladi');
     }
@@ -2535,22 +2537,33 @@ function uploadImg(id,inp){
   const f=inp.files[0];if(!f)return;
   if(f.size>3*1024*1024){showToast('❗ Rasm 3MB dan katta!');return;}
   const r=new FileReader();
-  r.onload=e=>{
+  r.onload=async e=>{
     const data=e.target.result;
     pImgs[id]=data;
-    // localStorage ga saqlaymiz — sahifa yopilsa ham qoladi
+    // localStorage ga saqlaymiz — zahira sifatida
     try{
       const saved=JSON.parse(localStorage.getItem('cono_pImgs')||'{}');
       saved[id]=data;
       localStorage.setItem('cono_pImgs',JSON.stringify(saved));
-    }catch(err){console.warn('Rasm saqlanmadi (localStorage to\'la bo\'lishi mumkin):',err);}
+    }catch(err){console.warn('localStorage xatosi:',err);}
+    // Backendga ham saqlaymiz — barcha qurilmalarda ko'rinadi
+    try{
+      await fetch(`${BACKEND_URL}/products/${id}?secret=${ADMIN_SECRET}`,{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({img: data})
+      });
+      // prods ichida ham yangilaymiz
+      const p=prods.find(x=>x.id===id);
+      if(p) p.img=data;
+    }catch(err){console.warn('Backend rasm saqlash xatosi:',err);}
     renderAdmin();renderProds();
     showToast(lang==='uz'?'✅ Rasm saqlandi!':'✅ Фото сохранено!');
   };
   r.readAsDataURL(f);
 }
 
-function deleteImg(id){
+async function deleteImg(id){
   if(!confirm('Rasmni o\'chirasizmi?'))return;
   delete pImgs[id];
   try{
@@ -2558,6 +2571,16 @@ function deleteImg(id){
     delete saved[id];
     localStorage.setItem('cono_pImgs',JSON.stringify(saved));
   }catch(err){}
+  // Backenddan ham o'chiramiz
+  try{
+    await fetch(`${BACKEND_URL}/products/${id}?secret=${ADMIN_SECRET}`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({img: null})
+    });
+    const p=prods.find(x=>x.id===id);
+    if(p) p.img=null;
+  }catch(err){console.warn('Backend rasm o\'chirish xatosi:',err);}
   renderAdmin();renderProds();
   showToast('🗑️ Rasm o\'chirildi');
 }
