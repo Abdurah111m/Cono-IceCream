@@ -2034,69 +2034,6 @@ function admSaveCard(){
   showToast('✅ Saqlandi!');
 }
 
-function admUploadQR(e){
-  const f = e.target.files[0];
-  if(!f) return;
-  if(f.size > 2*1024*1024){ showToast('❗ Fayl 2MB dan katta!'); return; }
-  const r = new FileReader();
-  r.onload = ev => {
-    admQRTemp = ev.target.result;
-    const wrap = document.getElementById('adm_qr_preview_wrap');
-    const img  = document.getElementById('adm_qr_preview');
-    if(wrap && img){ img.src = admQRTemp; wrap.style.display='flex'; }
-    const rb = document.getElementById('adm_qr_remove_btn');
-    if(rb) rb.style.display='block';
-    showToast('📷 Rasm yuklandi — endi "Saqlash" ni bosing');
-  };
-  r.readAsDataURL(f);
-}
-
-function admSaveQR(){
-  const src = admQRTemp || localStorage.getItem(ADM_QR_KEY);
-  if(!src){ showToast('❗ Avval QR rasm yuklang!'); return; }
-  localStorage.setItem(ADM_QR_KEY, src);
-  admQRTemp = null;
-  updatePaymentDetails();
-  showToast('✅ QR-kod saqlandi!');
-}
-
-function admRemoveQR(){
-  localStorage.removeItem(ADM_QR_KEY);
-  admQRTemp = null;
-  const wrap = document.getElementById('adm_qr_preview_wrap');
-  const img  = document.getElementById('adm_qr_preview');
-  if(wrap) wrap.style.display='none';
-  if(img)  img.src='';
-  const rb = document.getElementById('adm_qr_remove_btn');
-  if(rb) rb.style.display='none';
-  updatePaymentDetails();
-  showToast('🗑 QR-kod o\'chirildi');
-}
-
-// To'lov kartochkalarini localStorage dan yangilash
-function updatePaymentDetails(){
-  const num   = localStorage.getItem(ADM_CARD_KEY) || '5614 6814 2147 5900';
-  const owner = localStorage.getItem(ADM_OWNER_KEY) || 'Dilshod Khasanov';
-  const qr    = localStorage.getItem(ADM_QR_KEY);
-
-  // Barcha karta raqamlari va egalari
-  document.querySelectorAll('.pay-card-number').forEach(el => el.textContent = num);
-  document.querySelectorAll('.pay-card-name').forEach(el => el.textContent = owner);
-
-  // Copy tugmachalari — yangi raqam bilan
-  document.querySelectorAll('.copy-btn[onclick*="copyCard"]').forEach(btn => {
-    const raw = num.replace(/\s/g,'');
-    btn.setAttribute('onclick', `copyCard('${raw}', this)`);
-  });
-
-  // QR kod rasmi
-  const qrImg = document.querySelector('.bank-qr');
-  if(qrImg && qr){
-    qrImg.src = qr;
-    qrImg.style.display = 'block';
-  }
-}
-
 // ===== ADMIN =====
 function openAdmin(){
   document.getElementById('adminPanel').classList.add('open');
